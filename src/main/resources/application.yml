@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: DatabaseMeta
+  datasource:
+    url: jdbc:postgresql://10.90.50.84:5432/watererp
+    username: postgres
+    password: Ruis2022
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
