@@ -319,6 +319,202 @@ public class JavaFXUI {
         alert.showAndWait();
     }
 
+    private TableView<Column> createTable() {
+        TableView<Column> table = new TableView<>();
+        TableColumn<Column, String> columnNameColumn = new TableColumn<>("名称");
+        columnNameColumn.setCellValueFactory(cellData -> cellData.getValue().columnNameProperty());
+        columnNameColumn.setPrefWidth(170);
+        TableColumn<Column, String> columnTypeColumn = new TableColumn<>("类型");
+        columnTypeColumn.setCellValueFactory(cellData -> cellData.getValue().columnTypeProperty());
+        columnTypeColumn.setPrefWidth(110);
+        TableColumn<Column, String> isNullableColumn = new TableColumn<>("必填");
+        isNullableColumn.setCellValueFactory(cellData -> cellData.getValue().isNullableProperty());
+        isNullableColumn.setPrefWidth(45);
+        TableColumn<Column, String> columnCommentColumn = new TableColumn<>("备注");
+        columnCommentColumn.setCellValueFactory(cellData -> cellData.getValue().columnCommentProperty());
+        columnCommentColumn.prefWidthProperty().bind(table.widthProperty().subtract(340));
+        table.getColumns().addAll(columnNameColumn, columnTypeColumn, isNullableColumn, columnCommentColumn);
+        table.getSelectionModel().setCellSelectionEnabled(true);
+        table.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        table.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+            if (event.getCode() == KeyCode.C && event.isControlDown()) {
+                copySelected(table);
+            }
+        });
+        return table;
+    }
+
+    private void search(Stage stage, TextField textField, TableView<Column> table, ConnectionConfig connectionConfig) {
+        try {
+            String tableName = textField.getText();
+            table.getItems().clear();
+            List<Map<String, Object>> columns = databaseService.getColumnsForTable(connectionConfig, tableName);
+            columns.forEach(column -> table.getItems().add(new Column(
+                    new SimpleStringProperty((String) column.get("column_name")),
+                    new SimpleStringProperty((String) column.get("data_type")),
+                    new SimpleStringProperty((String) column.get("column_comment")),
+                    new SimpleStringProperty((String) column.get("is_nullable_text"))
+            )));
+            stage.setTitle(connectionConfig.getName() + " - " + tableName);
+        } catch (Exception e) {
+            showError("查询失败", e);
+        }
+    }
+
+    private void refreshConnections(ComboBox<ConnectionConfig> connectionBox) {
+        List<ConnectionConfig> connections = connectionHistoryService.loadConnections();
+        connectionBox.setItems(FXCollections.observableArrayList(connections));
+        if (!connections.isEmpty()) {
+            connectionBox.getSelectionModel().selectFirst();
+        }
+    }
+
+    private ConnectionConfig currentConnection(TextField nameField, TextField urlField, TextField usernameField,
+                                               PasswordField passwordField, TextField driverField, TextField schemaField) {
+        return new ConnectionConfig(nameField.getText(), urlField.getText(), usernameField.getText(),
+                passwordField.getText(), driverField.getText(), schemaField.getText());
+    }
+
+    private void fillConnectionFields(ConnectionConfig connectionConfig, TextField nameField, TextField urlField,
+                                      TextField usernameField, PasswordField passwordField, TextField driverField,
+                                      TextField schemaField) {
+        if (connectionConfig == null) {
+            return;
+        }
+        nameField.setText(connectionConfig.getName());
+        urlField.setText(connectionConfig.getUrl());
+        usernameField.setText(connectionConfig.getUsername());
+        passwordField.setText(connectionConfig.getPassword());
+        driverField.setText(connectionConfig.getDriverClassName());
+        schemaField.setText(connectionConfig.getSchema());
+    }
+
+    private void clearConnectionFields(TextField nameField, TextField urlField, TextField usernameField,
+                                       PasswordField passwordField, TextField driverField, TextField schemaField) {
+        nameField.clear();
+        urlField.setText(defaultUrl);
+        usernameField.setText(defaultUsername);
+        passwordField.setText(defaultPassword);
+        driverField.setText(defaultDriverClassName);
+        schemaField.setText("public");
+    }
+
+    private void validateConnectionForWindow(ConnectionConfig connectionConfig) {
+        if (connectionConfig.getUrl() == null || connectionConfig.getUrl().isBlank()) {
+            throw new IllegalArgumentException("JDBC URL 不能为空");
+        }
+        if (connectionConfig.getDriverClassName() == null || connectionConfig.getDriverClassName().isBlank()) {
+            throw new IllegalArgumentException("驱动类不能为空");
+        }
+        if (connectionConfig.getSchema() == null || connectionConfig.getSchema().isBlank()) {
+            connectionConfig.setSchema("public");
+        }
+    }
+
+    private void pasteAndSearch(TextField textField, Button searchButton) {
+        Clipboard clipboard = Clipboard.getSystemClipboard();
+        if (clipboard.hasString()) {
+            textField.setText(clipboard.getString());
+            searchButton.fire();
+        }
+    }
+
+    private void copySelect(TableView<Column> table, TextField textField, boolean allColumns) {
+        List<Column> columns = allColumns ? table.getItems() : table.getSelectionModel().getSelectedItems();
+        if (columns.isEmpty()) {
+            return;
+        }
+        StringBuilder selectSql = new StringBuilder("select ");
+        columns.forEach(column -> selectSql.append(column.getColumnName()).append(","));
+        selectSql.deleteCharAt(selectSql.length() - 1);
+        selectSql.append(" from ").append(textField.getText()).append(";");
+        ClipboardContent content = new ClipboardContent();
+        content.putString(selectSql.toString());
+        Clipboard.getSystemClipboard().setContent(content);
+    }
+
+    private void copySelected(TableView<Column> table) {
+        StringBuilder copiedText = new StringBuilder();
+        Map<Integer, List<String>> rows = getSelected(table);
+        rows.forEach((key, value) -> {
+            value.forEach(cellValue -> copiedText.append(cellValue).append("\t"));
+            copiedText.append(",\n");
+        });
+        if (copiedText.length() > 0) {
+            String textToCopy = copiedText.toString().trim();
+            if (textToCopy.lastIndexOf(",") != -1) {
+                textToCopy = textToCopy.substring(0, textToCopy.lastIndexOf(","));
+            }
+            ClipboardContent content = new ClipboardContent();
+            content.putString(textToCopy);
+            Clipboard.getSystemClipboard().setContent(content);
+        }
+    }
+
+    private void showInfo(String title, String message) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle(title);
+        alert.setHeaderText(null);
+        alert.setContentText(message);
+        alert.showAndWait();
+    }
+
+    private void pasteAndSearch(TextField textField, Button searchButton) {
+        Clipboard clipboard = Clipboard.getSystemClipboard();
+        if (clipboard.hasString()) {
+            textField.setText(clipboard.getString());
+            searchButton.fire();
+        }
+    }
+
+    private void copySelect(TableView<Column> table, TextField textField, boolean allColumns) {
+        List<Column> columns = allColumns ? table.getItems() : table.getSelectionModel().getSelectedItems();
+        if (columns.isEmpty()) {
+            return;
+        }
+        StringBuilder selectSql = new StringBuilder("select ");
+        columns.forEach(column -> selectSql.append(column.getColumnName()).append(","));
+        selectSql.deleteCharAt(selectSql.length() - 1);
+        selectSql.append(" from ").append(textField.getText()).append(";");
+        ClipboardContent content = new ClipboardContent();
+        content.putString(selectSql.toString());
+        Clipboard.getSystemClipboard().setContent(content);
+    }
+
+    private void copySelected(TableView<Column> table) {
+        StringBuilder copiedText = new StringBuilder();
+        Map<Integer, List<String>> rows = getSelected(table);
+        rows.forEach((key, value) -> {
+            value.forEach(cellValue -> copiedText.append(cellValue).append("\t"));
+            copiedText.append(",\n");
+        });
+        if (copiedText.length() > 0) {
+            String textToCopy = copiedText.toString().trim();
+            if (textToCopy.lastIndexOf(",") != -1) {
+                textToCopy = textToCopy.substring(0, textToCopy.lastIndexOf(","));
+            }
+            ClipboardContent content = new ClipboardContent();
+            content.putString(textToCopy);
+            Clipboard.getSystemClipboard().setContent(content);
+        }
+    }
+
+    private void showInfo(String title, String message) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle(title);
+        alert.setHeaderText(null);
+        alert.setContentText(message);
+        alert.showAndWait();
+    }
+
+    private void showError(String title, Exception e) {
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.setTitle(title);
+        alert.setHeaderText(e.getMessage());
+        alert.setContentText(e.getCause() == null ? e.toString() : e.getCause().toString());
+        alert.showAndWait();
+    }
+
     /**
      * 获取表格选中的值
      * @return selected row values
